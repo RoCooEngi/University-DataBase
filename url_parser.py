@@ -1,8 +1,8 @@
+import sqlite3
 import requests
 from requests_ntlm import HttpNtlmAuth
 from urllib.parse import urlparse
 from bs4 import BeautifulSoup
-import os
 
 def url_parser(session: requests.Session, url: str, ssl_certificate='sstu_bundle.pem'):
     '''Makes parsing of url'''
@@ -24,6 +24,13 @@ def get_links(response: requests.Response):
             link = requests.compat.urljoin(url, link)
         links[a.get_text(strip=True)] = link
     return links
+
+# creating a database (if not yet)
+connection_db = sqlite3.connect('university.db')
+cursor = connection_db.cursor()
+with open('tables_init.sql', 'r', encoding='utf-8') as file:
+    cursor.executescript(file.read())
+connection_db.commit()
 
 url = 'https://portal3.sstu.ru/Pages/Default.aspx'
 username = 'SSTUEDUDOM\\220123'
@@ -62,6 +69,9 @@ print(f'Found {len(second_level_links)} faculties')
 # iterate for each faculty
 for department in second_level_links.items():
     pass
+
+# close the database
+connection_db.close()
 
 
 
