@@ -20,3 +20,11 @@ CREATE TABLE IF NOT EXISTS programs (
     department_id INTEGER NOT NULL,
     FOREIGN KEY (department_id) REFERENCES departments(id)
 );
+
+CREATE TABLE IF NOT EXISTS subjects (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    semester INTEGER NOT NULL,
+    program_id INTEGER NOT NULL,
+    FOREIGN KEY (program_id) REFERENCES programs(id)
+);
