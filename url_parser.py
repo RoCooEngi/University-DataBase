@@ -7,7 +7,7 @@ import time
 import random
 from bs4 import BeautifulSoup
 from pprint import pprint
-
+####
 # main url
 url = 'https://portal3.sstu.ru/Pages/Default.aspx'
 # login
