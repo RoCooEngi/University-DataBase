@@ -25,6 +25,15 @@ CREATE TABLE IF NOT EXISTS subjects (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     semester INTEGER NOT NULL,
+    eval_method TEXT,
+    url TEXT,
     program_id INTEGER NOT NULL,
     FOREIGN KEY (program_id) REFERENCES programs(id)
 );
+
+-- CREATE TABLE IF NOT EXISTS students (
+--     id INTEGER PRIMARY KEY,
+--     name TEXT NOT NULL,
+--     study_year INTEGER NOT NULL,
+
+-- );
