@@ -50,7 +50,7 @@ CREATE TABLE IF NOT EXISTS students (
 CREATE TABLE IF NOT EXISTS grades (
     student_id INTEGER NOT NULL,
     subject_id INTEGER NOT NULL,
-    grade TEXT NOT NULL,
+    grade TEXT,
     FOREIGN KEY (student_id) REFERENCES students(id),
     FOREIGN KEY (subject_id) REFERENCES subjects(id),
     PRIMARY KEY (student_id, subject_id)

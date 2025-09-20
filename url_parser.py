@@ -44,6 +44,8 @@ from russian_names import RussianNames
 import multiprocessing as mp
 import signal
 from fuzzywuzzy import process, fuzz
+from pprint import pprint
+from datetime import datetime
 
 # Program configuration dictionary
 CONFIG = {
@@ -62,8 +64,13 @@ CONFIG = {
         'programs': False,
         'subjects': False,
         'data correction': False,
-        'students generator': False,
-    }
+        'students generator': True,
+    },
+    'SCHOLARSHIP_TOTAL': 60_000_000,            # Total scholarship fund
+    'SCHOLARSHIP_SOCIAL': (2_000, 0.5),
+    'SCHOLARSHIP_ACADEMIC': (11_500, 0.3),
+    'EXAM_PROBABILITY': (0.25, 0.4, 0.25, 0.1), # Probabilities for grades 5,4,3,2
+    'PASS_PROBABILITY': (0.75, 0.25),           # Probabilities for pass/fail
 }
 
 session_counter = 0 # Global session counter for retrying requests
@@ -472,6 +479,105 @@ def determine_eval_method(sub_name, semester, prog_type, is_practice_or_attestat
 # ('Оценка'), final semester subjects are exams ('Экзамен'), others
 # default to pass/fail ('Зачет').
 
+def make_abbr(text: str) -> str:
+    '''Generate an abbreviation for a program name.'''
+    if not text:
+        return ''
+
+    # try parentheses first (take inner quoted / parenthesized abbreviation/title)
+    match = re.search(r"\(([^\)]+)\)", text)
+    if match:
+        raw = match.group(1).strip()
+        # remove trailing year/mode tokens like 2018, очная, заочная, з/о etc.
+        raw = re.sub(r"\b(очная|заочная|з/о|о/о|201\d|20\d{2})\b", "", raw, flags=re.IGNORECASE).strip()
+        # if parentheses content looks like an abbreviation or short code, use it
+        if 1 <= len(raw) <= 12 and re.search(r'[A-Za-zА-Яа-я0-9]', raw):
+            # extract letters and digits, keep uppercase form
+            ab = ''.join(re.findall(r'[A-Za-zА-Я0-9]', raw))
+            if ab:
+                return ab.upper()
+
+    # handle quoted main titles ("..." or «...» or '...') preferring their initials
+    quote_match = re.search(r'["\'\u00AB\u00BB](.+?)["\'\u00AB\u00BB]', text)
+    if quote_match:
+        quoted = quote_match.group(1)
+        # build initials from quoted title first
+        parts_q = re.split(r'[\s,;/]+', quoted)
+        initials_q = [re.sub(r"[^A-Za-zА-Яа-я0-9]", '', w)[:1] for w in parts_q if w and len(re.sub(r"[^A-Za-zА-Яа-я0-9]", '', w))>0]
+        if initials_q:
+            return ''.join(initials_q)[:6].upper()
+
+    # words to ignore when building initials
+    stopwords = {
+        'и','в','на','по','с','к','из','для','под','о','об','при',
+        'бакалавр','бакалавриат','магистр','магистратура','специалитет',
+        'программа','образования','по','направление','направления',
+        'учебная','производственная','практика','практическая'
+    }
+
+    # normalize repeated dashes and remove stray punctuation
+    text_clean = re.sub(r'-{2,}', '-', text)
+    # remove trailing year/mode tokens (common noise)
+    text_clean = re.sub(r"\b(очная|заочная|з/о|о/о|201\d|20\d{2})\b", "", text_clean, flags=re.IGNORECASE)
+    # split on whitespace and separators and keep hyphenated parts
+    parts = re.split(r'[\s,;/]+', text_clean)
+    initials = []
+    for p in parts:
+        if not p:
+            continue
+        # split hyphenated components
+        comps = re.split(r'[-–—]', p)
+        for c in comps:
+            # strip punctuation
+            cstr = re.sub(r"[^A-Za-zА-Яа-я0-9]", '', c)
+            if not cstr:
+                continue
+            low = cstr.lower()
+            # skip single-letter segments that look like course codes (like 'б1', 'б8') unless meaningful
+            if low in stopwords or re.fullmatch(r'[бвмс]\d+', low):
+                continue
+            # take first letter (prefer uppercase if present later we upper())
+            initials.append(cstr[0])
+
+    if not initials:
+        # fallback: take all uppercase letters from the text
+        letters = re.findall(r'[A-ZА-Я0-9]', text)
+        return ''.join(letters).upper()
+
+    # form abbreviation from initials (letters only), limit length to 6
+    initials_letters = [ch for ch in initials if re.match(r'[A-Za-zА-Яа-я]', ch)]
+    abbr = ''.join(initials_letters)[:6].upper()
+
+    # If abbreviation has fewer than 2 letters, try other fallbacks
+    if len(abbr) < 2:
+        # 1) Try to collect initial letters from all words in the original text
+        words = re.findall(r'[A-Za-zА-Яа-я]+', text)
+        more = ''.join(w[0] for w in words if w)
+        if more:
+            candidate = (abbr + more).upper()
+            if len(candidate) >= 2:
+                return candidate[:6]
+
+        # 2) Fallback to extracting uppercase letters from the text (letters only)
+        up_letters = ''.join(re.findall(r'[A-ZА-Я]', text))
+        if len(up_letters) >= 2:
+            return up_letters[:6]
+
+        # 3) If we have a single letter, duplicate it to make two letters
+        if len(abbr) == 1:
+            return (abbr * 2)[:6]
+
+        # 4) As a last resort, return first two alphabetic characters found anywhere
+        all_letters = ''.join(re.findall(r'[A-Za-zА-Яа-я]', text))
+        if len(all_letters) >= 2:
+            return all_letters[:6].upper()
+
+        # Nothing usable found — return empty string
+        return ''
+
+    return abbr
+
+
 if __name__ == '__main__':
     # Create database and tables if not exist
     connection_db = sqlite3.connect('university.db')
@@ -736,5 +842,218 @@ if __name__ == '__main__':
         else:
             print('No semester or evaluation method data to update')
     
-    connection_db.close()
+    # connection_db.close()
     
+    # Update zero data subjects' semesters and evaluation methods
+    if not (CONFIG['DB_OPERATIONS']['students generator'] or CONFIG['DB_OPERATIONS']['all']):
+        print('Unable to fill students, grades and groups table: permission is missing')
+    else:
+        cursor.execute('SELECT id, name FROM programs ORDER BY id')
+        programs = cursor.fetchall()
+        for prog_id, prog_name in programs:
+            cursor.execute('SELECT COUNT(*) FROM groups WHERE program_id = ?', (prog_id,))
+            if cursor.fetchone()[0] == 0:
+                cursor.execute('SELECT semester FROM subjects WHERE program_id = ?', (prog_id,))
+                semesters_data = cursor.fetchall()
+                semesters = max({row[0] for row in semesters_data if row[0]}) if semesters_data else 0
+                if not semesters:
+                    print(f'Program "{prog_name}" has no subjects with valid semesters, skipping group generation')
+                    continue
+                elif semesters <= 4:
+                    education_type = 'м'
+                    group_count = 2
+                elif semesters <= 8:
+                    education_type = 'б'
+                    group_count = 4
+                else:
+                    education_type = 'с'
+                    group_count = 6
+                group_name = f"{education_type}-{make_abbr(prog_name)}"
+                for group in range(1, group_count + 1):
+                    cursor.execute('INSERT INTO groups (name, course_year, program_id) VALUES (?, ?, ?)', 
+                                (f"{group_name}-{group}", group, prog_id))
+                print(f'Program "{prog_name}" with {semesters} semesters: created {group_count} groups of type "{group_name}"')
+                connection_db.commit()
+            else:
+                print(f'Program "{prog_name}" already has groups, skipping')
+        
+        cursor.execute('SELECT id FROM groups ORDER BY id')
+        groups = [i[0] for i in cursor.fetchall()]
+        if not groups:
+            print('No groups available, cannot generate students')
+        else:
+            cursor.execute('SELECT COUNT(*) FROM students')
+            if cursor.fetchone()[0] != 0:
+                print('Students table is not empty, skipping student generation')
+            else:
+                student_id = 200000
+                for group_id in groups:
+                    student_count = random.randint(15, 25)
+                    for student in range(1, student_count + 1):
+                        student_name = RussianNames().get_person()
+                        cursor.execute('INSERT INTO students (id, name, group_id) VALUES (?, ?, ?)', (student_id, student_name, group_id))
+                        print(f'Created student {student_name} with ID {student_id} in group {group_id}')
+                        student_id += 1
+                    connection_db.commit()
+                print('Students have been generated and saved')
+            
+            cursor.execute('SELECT id, group_id FROM students ORDER BY id')
+            students = [i for i in cursor.fetchall()]
+            if not students:
+                print('Students table is empty, skipping grades generation')
+            else:
+                cursor.execute('SELECT COUNT(*) FROM grades')
+                if cursor.fetchone()[0] != 0:
+                    print('Grades table is not empty, skipping grades generation')
+                else:
+                    for student_id, group_id in students:
+                        # get program and course_year for the group
+                        cursor.execute('SELECT program_id, course_year FROM groups WHERE id = ?', (group_id,))
+                        res = cursor.fetchone()
+                        if not res:
+                            print(f'Group {group_id} not found for student {student_id}, skipping')
+                            continue
+                        prog_id, course_year = res
+
+                        # determine student's current semester based on PC time
+                        # Russian academic year: 1st sem = Sep..Jan, 2nd sem = Feb..Jul, Aug treated as summer (use 2nd)
+                        now = datetime.now()
+                        month = now.month
+                        if month in (9, 10, 11, 12, 1):
+                            sem_in_course = 1
+                        else:
+                            # months 2..7 => second semester, 8 (Aug) => summer -> use second semester
+                            sem_in_course = 2
+
+                        if not course_year or course_year < 1:
+                            print(f'Invalid course_year {course_year} for group {group_id}, skipping student {student_id}')
+                            continue
+                        student_semester = 2 * course_year - 1 if sem_in_course == 1 else 2 * course_year
+
+                        # get program subjects
+                        cursor.execute('SELECT id, semester, eval_method FROM subjects WHERE program_id = ?', (prog_id,))
+                        subjects = cursor.fetchall()
+                        if not subjects:
+                            print(f'Program {prog_id} has no subjects, skipping student {student_id}')
+                            continue
+
+                        for subj_id, semester, eval_method in subjects:
+                            # treat missing/zero semester as future (insert NULL)
+                            if not semester or semester > student_semester:
+                                grade = None
+                            else:
+                                if eval_method in ('Экзамен', 'Оценка'):
+                                    grade = random.choices((5, 4, 3, 2), weights=CONFIG['EXAM_PROBABILITY'])[0]
+                                else:
+                                    # for pass/fail store 1 for pass, 0 for fail
+                                    grade = random.choices((1, 0), weights=CONFIG['PASS_PROBABILITY'])[0]
+
+                            cursor.execute('INSERT INTO grades (student_id, subject_id, grade) VALUES (?, ?, ?)',
+                                           (student_id, subj_id, grade))
+                        connection_db.commit()
+                        print(f'Generated grades for student ID {student_id} (current semester: {student_semester})')
+                    print('Grades have been generated and saved')
+            
+            cursor.execute('SELECT id, name, group_id FROM students ORDER BY id')
+            students = cursor.fetchall()
+            if not students:
+                print('No students available, cannot generate scholarships')
+            else:
+                remaining = CONFIG['SCHOLARSHIP_TOTAL']
+                social_amt, social_prob = CONFIG['SCHOLARSHIP_SOCIAL']
+                academic_amt, academic_prob = CONFIG['SCHOLARSHIP_ACADEMIC']
+                awarded_social = 0
+                awarded_academic = 0
+
+                now = datetime.now()
+                month = now.month
+                sem_in_course = 1 if month in (9, 10, 11, 12, 1) else 2
+
+                for student_id, student_name, group_id in students:
+                    # get program and course_year for group
+                    cursor.execute('SELECT program_id, course_year FROM groups WHERE id = ?', (group_id,))
+                    res = cursor.fetchone()
+                    if not res:
+                        print(f'Group {group_id} not found for student {student_id}, skipping scholarship check')
+                        continue
+                    prog_id, course_year = res
+                    if not course_year or course_year < 1:
+                        print(f'Invalid course_year {course_year} for group {group_id}, skipping student {student_id}')
+                        continue
+
+                    student_semester = 2 * course_year - 1 if sem_in_course == 1 else 2 * course_year
+
+                    # fetch grades for subjects in the current semester for this student
+                    cursor.execute(
+                        '''SELECT g.grade
+                           FROM grades g
+                           JOIN subjects s ON g.subject_id = s.id
+                           WHERE g.student_id = ? AND s.semester = ?''',
+                        (student_id, student_semester)
+                    )
+                    grade_rows = [r[0] for r in cursor.fetchall()]
+
+                    if not grade_rows:
+                        # no grades -> scholarship = 0
+                        cursor.execute('UPDATE students SET scholarship = 0 WHERE id = ?', (student_id,))
+                        connection_db.commit()
+                        print(f'Student {student_name} (ID {student_id}) has no grades for semester {student_semester}, scholarship set to 0')
+                        continue
+
+                    # if any grade is NULL (None) treat as not eligible -> scholarship = 0
+                    if any(g is None for g in grade_rows):
+                        cursor.execute('UPDATE students SET scholarship = 0 WHERE id = ?', (student_id,))
+                        connection_db.commit()
+                        print(f'Student {student_name} (ID {student_id}) has missing grades for semester {student_semester}, scholarship set to 0')
+                        continue
+
+                    # check for fails (0), twos (2) and threes (3) -> scholarship = 0
+                    if any(g in (0, 2, 3) for g in grade_rows):
+                        cursor.execute('UPDATE students SET scholarship = 0 WHERE id = ?', (student_id,))
+                        connection_db.commit()
+                        print(f'Student {student_name} (ID {student_id}) is NOT eligible (has 0,2 or 3) for semester {student_semester}, scholarship set to 0')
+                        continue
+
+                    # eligible for social scholarship (amount + chance)
+                    student_awarded_total = 0
+                    # check funds and random chance
+                    if remaining >= social_amt and random.random() < social_prob:
+                        remaining -= social_amt
+                        awarded_social += social_amt
+                        student_awarded_total += social_amt
+                        cursor.execute('UPDATE students SET scholarship = ? WHERE id = ?', (student_awarded_total, student_id))
+                        connection_db.commit()
+                        print(f'Awarded social scholarship {social_amt} to {student_name} (ID {student_id})')
+                    else:
+                        # either insufficient funds or chance failed -> no social scholarship
+                        cursor.execute('UPDATE students SET scholarship = 0 WHERE id = ?', (student_id,))
+                        connection_db.commit()
+                        if remaining < social_amt:
+                            print(f'Insufficient funds for social scholarship for {student_name} (ID {student_id}), remaining {remaining}')
+                        else:
+                            print(f'{student_name} (ID {student_id}) did not pass social scholarship chance (prob={social_prob})')
+                        continue  # cannot award academic if social wasn't given
+
+                    # check academic chance: at most two 4s
+                    count_fours = sum(1 for g in grade_rows if g == 4)
+                    if count_fours <= 2:
+                        if random.random() < academic_prob:
+                            if remaining >= academic_amt:
+                                remaining -= academic_amt
+                                awarded_academic += academic_amt
+                                student_awarded_total += academic_amt
+                                cursor.execute('UPDATE students SET scholarship = ? WHERE id = ?', (student_awarded_total, student_id))
+                                connection_db.commit()
+                                print(f'Also awarded ACADEMIC scholarship {academic_amt} to {student_name} (ID {student_id})')
+                            else:
+                                print(f'Insufficient funds for academic scholarship for {student_name} (ID {student_id}), remaining {remaining}')
+                        else:
+                            print(f'{student_name} (ID {student_id}) did not win academic scholarship by chance')
+                    else:
+                        print(f'{student_name} (ID {student_id}) has more than two 4s ({count_fours}), not eligible for academic scholarship')
+
+                print('Scholarship distribution finished.')
+                print(f'Total social awarded: {awarded_social}, total academic awarded: {awarded_academic}')
+                print(f'Remaining scholarship fund: {remaining}')
+                
+    connection_db.close()
