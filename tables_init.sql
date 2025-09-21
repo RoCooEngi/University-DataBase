@@ -25,6 +25,33 @@ CREATE TABLE IF NOT EXISTS subjects (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     semester INTEGER NOT NULL,
+    eval_method TEXT,
+    url TEXT,
     program_id INTEGER NOT NULL,
     FOREIGN KEY (program_id) REFERENCES programs(id)
+);
+
+CREATE TABLE IF NOT EXISTS groups (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    course_year INTEGER NOT NULL,
+    program_id INTEGER NOT NULL,
+    FOREIGN KEY (program_id) REFERENCES programs(id)
+);
+
+CREATE TABLE IF NOT EXISTS students (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    group_id INTEGER NOT NULL,
+    scholarship FLOAT,
+    FOREIGN KEY (group_id) REFERENCES groups(id)
+);
+
+CREATE TABLE IF NOT EXISTS grades (
+    student_id INTEGER NOT NULL,
+    subject_id INTEGER NOT NULL,
+    grade TEXT,
+    FOREIGN KEY (student_id) REFERENCES students(id),
+    FOREIGN KEY (subject_id) REFERENCES subjects(id),
+    PRIMARY KEY (student_id, subject_id)
 );

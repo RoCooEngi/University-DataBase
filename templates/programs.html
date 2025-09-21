@@ -1,0 +1,19 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Программы</h2>
+<p>Список программ:</p>
+<ul>
+    {% for program in programs %}
+        <li>
+            {{ program.name }}
+            <a href="{{ url_for('curriculum', program_id=program.id) }}">Учебный план</a>
+        </li>
+    {% endfor %}
+</ul>
+<h3>Группы</h3>
+<ul>
+    {% for group in groups %}
+        <li><a href="{{ url_for('group', program_id=group.program_id, group_id=group.id) }}">{{ group.name }}</a></li>
+    {% endfor %}
+</ul>
+{% endblock %}

@@ -1,0 +1,10 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Учебный план</h2>
+<p>Список предметов:</p>
+<ul>
+    {% for subject in subjects %}
+        <li>{{ subject.name }} (Семестр: {{ subject.semester }}, Метод оценки: {{ subject.eval_method }})</li>
+    {% endfor %}
+</ul>
+{% endblock %}
