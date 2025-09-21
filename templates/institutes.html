@@ -1,0 +1,10 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Институты</h2>
+<p>Список институтов:</p>
+<ul>
+    {% for institute in institutes %}
+        <li><a href="{{ url_for('departments', institute_id=institute.id) }}">{{ institute.name }}</a></li>
+    {% endfor %}
+</ul>
+{% endblock %}
