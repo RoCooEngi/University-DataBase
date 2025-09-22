@@ -63,10 +63,21 @@ def curriculum(program_id):
 
 # Страница группы
 @app.route('/program/<int:program_id>/group/<int:group_id>')
-def group(program_id, group_id):
+def group(group_id, program_id):
     try:
         conn = get_db_connection()
-        group = conn.execute('SELECT * FROM groups WHERE id = ? AND program_id = ?', (group_id, program_id)).fetchone()
+        group = conn.execute('SELECT * FROM groups WHERE id = ?', (group_id)).fetchone()
+        students = conn.execute('SELECT * FROM students WHERE group_id = ?', (group_id,)).fetchall()
+        conn.close()
+        return render_template('group.html', group=group, students=students)
+    except Exception as e:
+        return f"Error: {str(e)}", 500
+    
+# Страница студента
+@app.route('/group/<int:group_id>/edit_student/<int:student_id>')
+def student(program_id, group_id):
+    try:
+        conn = get_db_connection()
         students = conn.execute('SELECT * FROM students WHERE group_id = ?', (group_id,)).fetchall()
         current_semester = conn.execute('SELECT course_year FROM groups WHERE id = ?', (group_id,)).fetchone()['course_year']
         schedules = {}
@@ -79,10 +90,10 @@ def group(program_id, group_id):
             ''', (student['id'], current_semester)).fetchall()
             schedules[student['id']] = schedule
         conn.close()
-        return render_template('group.html', group=group, students=students, schedules=schedules, program_id=program_id)
+        return render_template('students.html', schedules=schedules, program_id=program_id)
     except Exception as e:
         return f"Error: {str(e)}", 500
-
+    
 # Добавление студента
 @app.route('/group/<int:group_id>/add_student', methods=['POST'])
 def add_student(group_id):
@@ -98,6 +109,7 @@ def add_student(group_id):
         return f"Error: {str(e)}", 500
 
 # Редактирование студента
+"""
 @app.route('/group/<int:group_id>/edit_student/<int:student_id>', methods=['GET', 'POST'])
 def edit_student(group_id, student_id):
     try:
@@ -114,7 +126,7 @@ def edit_student(group_id, student_id):
         return render_template('edit_student.html', student=student, group_id=group_id)
     except Exception as e:
         return f"Error: {str(e)}", 500
-
+"""
 # Удаление студента
 @app.route('/group/<int:group_id>/delete_student/<int:student_id>', methods=['POST'])
 def delete_student(group_id, student_id):
