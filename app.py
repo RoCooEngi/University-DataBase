@@ -84,20 +84,66 @@ def group(program_id, group_id):
         return f"Error: {str(e)}", 500
 
 # Добавление студента
-@app.route('/group/<int:group_id>/add_student', methods=['POST'])
+@app.route('/group/<int:group_id>/add_student', methods=['GET', 'POST'])
 def add_student(group_id):
     try:
         conn = get_db_connection()
-        name = request.form['name']
-        scholarship = 1 if request.form.get('scholarship') else 0
-        program_id = request.form['program_id']
-        if not name:
+        if group_id is None:
             conn.close()
-            return "Error: Name is required", 400
-        conn.execute('INSERT INTO students (name, group_id, scholarship) VALUES (?, ?, ?)', (name, group_id, scholarship))
-        conn.commit()
+            return "Error: Invalid group ID", 400
+        
+        if request.method == 'POST':
+            name = request.form.get('name', '').strip()
+            if not name:
+                error = "Name is required"
+                program_id = conn.execute('SELECT program_id FROM groups WHERE id = ?', (group_id,)).fetchone()['program_id']
+                current_semester = conn.execute('SELECT course_year FROM groups WHERE id = ?', (group_id,)).fetchone()['course_year']
+                subjects = conn.execute('''
+                    SELECT id AS subject_id, name
+                    FROM subjects
+                    WHERE program_id = ? AND semester <= ?
+                ''', (program_id, current_semester)).fetchall()
+                conn.close()
+                return render_template('add_student.html', group_id=group_id, program_id=program_id, subjects=subjects, error=error)
+            scholarship = 1 if request.form.get('scholarship') else 0
+            program_id = request.form.get('program_id')
+            if not program_id:
+                program_id = conn.execute('SELECT program_id FROM groups WHERE id = ?', (group_id,)).fetchone()['program_id']
+            conn.execute('INSERT INTO students (name, group_id, scholarship) VALUES (?, ?, ?)',
+                        (name, group_id, scholarship))
+            student_id = conn.execute('SELECT last_insert_rowid()').fetchone()[0]
+            # Добавление начальных оценок
+            for key, value in request.form.items():
+                if key.startswith('grade_') and value.strip():
+                    subject_id = int(key.replace('grade_', ''))
+                    try:
+                        grade = float(value) if value != '' else None
+                        conn.execute('''
+                            INSERT INTO grades (student_id, subject_id, grade)
+                            VALUES (?, ?, ?)
+                        ''', (student_id, subject_id, grade))
+                    except ValueError:
+                        continue
+            conn.commit()
+            conn.close()
+            return redirect(url_for('group', program_id=program_id, group_id=group_id))
+        
+        # Для GET-запроса загружаем данные группы и предметы
+        group = conn.execute('SELECT program_id, course_year FROM groups WHERE id = ?', (group_id,)).fetchone()
+        program_id = group['program_id'] if group else None
+        current_semester = group['course_year'] if group else None
+        subjects = []
+        if program_id and current_semester:
+            subjects = conn.execute('''
+                SELECT id AS subject_id, name
+                FROM subjects
+                WHERE program_id = ? AND semester <= ?
+            ''', (program_id, current_semester)).fetchall()
         conn.close()
-        return redirect(url_for('group', program_id=program_id, group_id=group_id))
+        return render_template('add_student.html', group_id=group_id, program_id=program_id, subjects=subjects)
+    except ValueError as e:
+        conn.close()
+        return f"Error: Invalid input - {str(e)}", 400
     except Exception as e:
         return f"Error: {str(e)}", 500
 

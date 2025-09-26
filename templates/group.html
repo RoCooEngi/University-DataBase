@@ -2,6 +2,9 @@
 {% block content %}
 <h2>Группа: {{ group.name }}</h2>
 <p>Список студентов:</p>
+<form action="{{ url_for('add_student', group_id=group.id) }}">
+    <button type="submit">Добавить студента</button>
+</form>
 {% for student in students %}
 <ul>
     <h4><a href="{{ url_for('edit_student', group_id=group.id, student_id=student.id) }}">{{ student.name }}</a> (Стипендия: {% if student.scholarship %} {{student.scholarship}} {% else %}Нет{% endif %})</h4>
@@ -13,10 +16,5 @@
     </form>
 </ul>
 {% endfor %}
-<form action="{{ url_for('add_student', group_id=group.id) }}" method="POST">
-    Имя студента: <input type="text" name="name" required>
-    Стипендия: <input type="checkbox" name="scholarship">
-    <input type="hidden" name="program_id" value="{{ program_id }}">
-    <button type="submit">Добавить студента</button>
-</form>
+
 {% endblock %}
