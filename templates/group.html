@@ -2,30 +2,21 @@
 {% block content %}
 <h2>Группа: {{ group.name }}</h2>
 <p>Список студентов:</p>
-<ul>
-    {% for student in students %}
-        <li>
-            {{ student.name }} (Стипендия: {% if student.scholarship %}Да{% else %}Нет{% endif %})
-            <a href="{{ url_for('edit_student', group_id=group.id, student_id=student.id) }}">Редактировать</a>
-            <form action="{{ url_for('delete_student', group_id=group.id, student_id=student.id) }}" method="POST" style="display:inline;">
-                <button type="submit">Удалить</button>
-            </form>
-        </li>
-    {% endfor %}
-</ul>
-<h3>Оценки</h3>
 {% for student in students %}
-    <h4>{{ student.name }}</h4>
-    <ul>
-        {% for schedule in schedules[student.id] %}
-            <li>{{ schedule.name }}: {{ schedule.grade }}</li>
-        {% endfor %}
-    </ul>
+<ul>
+    <h4><a href="{{ url_for('edit_student', group_id=group.id, student_id=student.id) }}">{{ student.name }}</a> (Стипендия: {% if student.scholarship %} {{student.scholarship}} {% else %}Нет{% endif %})</h4>
+    {% for schedule in schedules[student.id] %}
+        <li>{{ schedule.name }}: {{ schedule.grade }}</li>
+    {% endfor %}
+    <form action="{{ url_for('delete_student', group_id=group.id, student_id=student.id) }}" method="POST" style="display:inline;">
+        <button type="submit">Удалить</button>
+    </form>
+</ul>
 {% endfor %}
 <form action="{{ url_for('add_student', group_id=group.id) }}" method="POST">
+    Имя студента: <input type="text" name="name" required>
+    Стипендия: <input type="checkbox" name="scholarship">
     <input type="hidden" name="program_id" value="{{ program_id }}">
-    <label>Имя студента: <input type="text" name="name"></label>
-    <label>Стипендия: <input type="checkbox" name="scholarship"></label>
     <button type="submit">Добавить студента</button>
 </form>
 {% endblock %}
