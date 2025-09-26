@@ -94,8 +94,20 @@ def add_student(group_id):
         
         if request.method == 'POST':
             name = request.form.get('name', '').strip()
+            student_id = request.form.get('student_id', '').strip()  # Вводимый id как record_book_id
             if not name:
                 error = "Name is required"
+                program_id = conn.execute('SELECT program_id FROM groups WHERE id = ?', (group_id,)).fetchone()['program_id']
+                current_semester = conn.execute('SELECT course_year FROM groups WHERE id = ?', (group_id,)).fetchone()['course_year']
+                subjects = conn.execute('''
+                    SELECT id AS subject_id, name
+                    FROM subjects
+                    WHERE program_id = ? AND semester <= ?
+                ''', (program_id, current_semester)).fetchall()
+                conn.close()
+                return render_template('add_student.html', group_id=group_id, program_id=program_id, subjects=subjects, error=error)
+            if student_id and conn.execute('SELECT 1 FROM students WHERE id = ?', (student_id,)).fetchone():
+                error = "This student ID is already in use"
                 program_id = conn.execute('SELECT program_id FROM groups WHERE id = ?', (group_id,)).fetchone()['program_id']
                 current_semester = conn.execute('SELECT course_year FROM groups WHERE id = ?', (group_id,)).fetchone()['course_year']
                 subjects = conn.execute('''
@@ -109,9 +121,9 @@ def add_student(group_id):
             program_id = request.form.get('program_id')
             if not program_id:
                 program_id = conn.execute('SELECT program_id FROM groups WHERE id = ?', (group_id,)).fetchone()['program_id']
-            conn.execute('INSERT INTO students (name, group_id, scholarship) VALUES (?, ?, ?)',
-                        (name, group_id, scholarship))
-            student_id = conn.execute('SELECT last_insert_rowid()').fetchone()[0]
+            conn.execute('INSERT INTO students (id, name, group_id, scholarship) VALUES (?, ?, ?, ?)',
+                        (student_id if student_id else None, name, group_id, scholarship))
+            student_id = conn.execute('SELECT last_insert_rowid()').fetchone()[0] if not student_id else student_id
             # Добавление начальных оценок
             for key, value in request.form.items():
                 if key.startswith('grade_') and value.strip():
@@ -163,8 +175,20 @@ def edit_student(group_id, student_id):
         
         if request.method == 'POST':
             name = request.form.get('name', '').strip()
+            new_student_id = request.form.get('student_id', '').strip()  # Новый id для редактирования
             if not name:
                 error = "Name is required"
+                grades = conn.execute('''
+                    SELECT subjects.id AS subject_id, subjects.name, grades.grade
+                    FROM subjects
+                    LEFT JOIN grades ON grades.subject_id = subjects.id AND grades.student_id = ?
+                    WHERE subjects.program_id = (SELECT program_id FROM groups WHERE id = ?) AND subjects.semester <= (SELECT course_year FROM groups WHERE id = ?)
+                ''', (student_id, group_id, group_id)).fetchall()
+                program_id = conn.execute('SELECT program_id FROM groups WHERE id = ?', (group_id,)).fetchone()['program_id']
+                conn.close()
+                return render_template('edit_student.html', student=student, group_id=group_id, program_id=program_id, grades=grades, error=error)
+            if new_student_id and new_student_id != str(student_id) and conn.execute('SELECT 1 FROM students WHERE id = ?', (new_student_id,)).fetchone():
+                error = "This student ID is already in use"
                 grades = conn.execute('''
                     SELECT subjects.id AS subject_id, subjects.name, grades.grade
                     FROM subjects
@@ -183,8 +207,12 @@ def edit_student(group_id, student_id):
                 conn.close()
                 return "Error: Program ID not found", 500
             
-            # Обновление данных студента
-            conn.execute('UPDATE students SET name = ?, scholarship = ? WHERE id = ?', (name, scholarship, student_id))
+            # Обновление данных студента, включая id, если оно изменилось
+            if new_student_id and new_student_id != str(student_id):
+                conn.execute('UPDATE grades SET student_id = ? WHERE student_id = ?', (new_student_id, student_id))
+                conn.execute('UPDATE students SET id = ?, name = ?, scholarship = ? WHERE id = ?', (new_student_id, name, scholarship, student_id))
+            else:
+                conn.execute('UPDATE students SET name = ?, scholarship = ? WHERE id = ?', (name, scholarship, student_id))
             
             # Обновление оценок
             for key, value in request.form.items():
@@ -195,7 +223,7 @@ def edit_student(group_id, student_id):
                         conn.execute('''
                             INSERT OR REPLACE INTO grades (student_id, subject_id, grade)
                             VALUES (?, ?, ?)
-                        ''', (student_id, subject_id, grade))
+                        ''', (new_student_id if new_student_id else student_id, subject_id, grade))
                     except ValueError:
                         continue  # Пропускаем некорректные значения
             

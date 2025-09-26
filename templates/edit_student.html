@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% block content %}
 {% if student %}
-    Редактировать студента: {{ student.name or 'Без имени' }}
+    Редактировать студента: {{ student.name }}
 
     {% if error %}
         <p style="color: red;">{{ error }}</p>
@@ -9,6 +9,8 @@
 
     <form action="{{ url_for('edit_student', group_id=group_id, student_id=student.id) }}" method="POST">
         <input type="hidden" name="program_id" value="{{ program_id if program_id else '' }}">
+        
+        <label>ID (номер зачетки): </label><input type="text" name="student_id" value="{{ student.id }}" required><br><br>
         
         <label>Имя: </label><input type="text" name="name" value="{{ student.name if student.name else '' }}" required><br><br>
         

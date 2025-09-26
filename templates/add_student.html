@@ -9,6 +9,8 @@
 <form action="{{ url_for('add_student', group_id=group_id) }}" method="POST">
     <input type="hidden" name="program_id" value="{{ program_id if program_id else '' }}">
     
+    <label>ID (номер зачетки): </label><input type="text" name="student_id" required><br><br>
+    
     <label>Имя: </label><input type="text" name="name" required><br><br>
     
     <label>Стипендия: </label><input type="checkbox" name="scholarship"><br><br>
