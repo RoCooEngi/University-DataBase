@@ -84,34 +84,184 @@ def group(program_id, group_id):
         return f"Error: {str(e)}", 500
 
 # Добавление студента
-@app.route('/group/<int:group_id>/add_student', methods=['POST'])
+@app.route('/group/<int:group_id>/add_student', methods=['GET', 'POST'])
 def add_student(group_id):
     try:
-        name = request.form['name']
-        scholarship = 1 if request.form.get('scholarship') else 0
         conn = get_db_connection()
-        conn.execute('INSERT INTO students (name, group_id, scholarship) VALUES (?, ?, ?)', (name, group_id, scholarship))
-        conn.commit()
+        if group_id is None:
+            conn.close()
+            return "Error: Invalid group ID", 400
+        
+        if request.method == 'POST':
+            name = request.form.get('name', '').strip()
+            student_id = request.form.get('student_id', '').strip()  # Вводимый id как record_book_id
+            scholarship_raw = request.form.get('scholarship', '0.0').strip()  # Получаем строковое значение
+            try:
+                scholarship = float(scholarship_raw) if scholarship_raw else 0.0  # Преобразуем в float, по умолчанию 0.0
+                print(f"DEBUG: scholarship input = {scholarship_raw}, saved as = {scholarship}")  # Отладочный вывод
+            except ValueError:
+                scholarship = 0.0
+                print(f"DEBUG: Invalid scholarship input '{scholarship_raw}', defaulting to 0.0")
+            
+            if not name:
+                error = "Name is required"
+                program_id = conn.execute('SELECT program_id FROM groups WHERE id = ?', (group_id,)).fetchone()['program_id']
+                current_semester = conn.execute('SELECT course_year FROM groups WHERE id = ?', (group_id,)).fetchone()['course_year']
+                subjects = conn.execute('''
+                    SELECT id AS subject_id, name
+                    FROM subjects
+                    WHERE program_id = ? AND semester <= ?
+                ''', (program_id, current_semester)).fetchall()
+                conn.close()
+                return render_template('add_student.html', group_id=group_id, program_id=program_id, subjects=subjects, error=error)
+            if student_id and conn.execute('SELECT 1 FROM students WHERE id = ?', (student_id,)).fetchone():
+                error = "This student ID is already in use"
+                program_id = conn.execute('SELECT program_id FROM groups WHERE id = ?', (group_id,)).fetchone()['program_id']
+                current_semester = conn.execute('SELECT course_year FROM groups WHERE id = ?', (group_id,)).fetchone()['course_year']
+                subjects = conn.execute('''
+                    SELECT id AS subject_id, name
+                    FROM subjects
+                    WHERE program_id = ? AND semester <= ?
+                ''', (program_id, current_semester)).fetchall()
+                conn.close()
+                return render_template('add_student.html', group_id=group_id, program_id=program_id, subjects=subjects, error=error)
+            program_id = request.form.get('program_id')
+            if not program_id:
+                program_id = conn.execute('SELECT program_id FROM groups WHERE id = ?', (group_id,)).fetchone()['program_id']
+            conn.execute('INSERT INTO students (id, name, group_id, scholarship) VALUES (?, ?, ?, ?)',
+                        (student_id if student_id else None, name, group_id, scholarship))
+            student_id = conn.execute('SELECT last_insert_rowid()').fetchone()[0] if not student_id else student_id
+            # Добавление начальных оценок
+            for key, value in request.form.items():
+                if key.startswith('grade_') and value.strip():
+                    subject_id = int(key.replace('grade_', ''))
+                    try:
+                        grade = float(value) if value != '' else None
+                        conn.execute('''
+                            INSERT INTO grades (student_id, subject_id, grade)
+                            VALUES (?, ?, ?)
+                        ''', (student_id, subject_id, grade))
+                    except ValueError:
+                        continue
+            conn.commit()
+            conn.close()
+            return redirect(url_for('group', program_id=program_id, group_id=group_id))
+        
+        # Для GET-запроса загружаем данные группы и предметы
+        group = conn.execute('SELECT program_id, course_year FROM groups WHERE id = ?', (group_id,)).fetchone()
+        program_id = group['program_id'] if group else None
+        current_semester = group['course_year'] if group else None
+        subjects = []
+        if program_id and current_semester:
+            subjects = conn.execute('''
+                SELECT id AS subject_id, name
+                FROM subjects
+                WHERE program_id = ? AND semester <= ?
+            ''', (program_id, current_semester)).fetchall()
         conn.close()
-        return redirect(url_for('group', program_id=request.form['program_id'], group_id=group_id))
+        return render_template('add_student.html', group_id=group_id, program_id=program_id, subjects=subjects)
+    except ValueError as e:
+        conn.close()
+        return f"Error: Invalid input - {str(e)}", 400
     except Exception as e:
         return f"Error: {str(e)}", 500
 
-# Редактирование студента
+# Редактирование студента и зачетки (оценок)
 @app.route('/group/<int:group_id>/edit_student/<int:student_id>', methods=['GET', 'POST'])
 def edit_student(group_id, student_id):
     try:
         conn = get_db_connection()
+        if group_id is None or student_id is None:
+            conn.close()
+            return "Error: Invalid group or student ID", 400
+        
         student = conn.execute('SELECT * FROM students WHERE id = ?', (student_id,)).fetchone()
+        if not student or student['group_id'] != group_id:
+            conn.close()
+            return "Student not found or not in this group", 404
+        
         if request.method == 'POST':
-            name = request.form['name']
-            scholarship = 1 if request.form.get('scholarship') else 0
-            conn.execute('UPDATE students SET name = ?, scholarship = ? WHERE id = ?', (name, scholarship, student_id))
+            name = request.form.get('name', '').strip()
+            new_student_id = request.form.get('student_id', '').strip()  # Новый id для редактирования
+            scholarship_raw = request.form.get('scholarship', '0.0').strip()  # Получаем строковое значение
+            try:
+                scholarship = float(scholarship_raw) if scholarship_raw else 0.0  # Преобразуем в float
+                print(f"DEBUG: scholarship input = {scholarship_raw}, saved as = {scholarship}")  # Отладочный вывод
+            except ValueError:
+                scholarship = 0.0
+                print(f"DEBUG: Invalid scholarship input '{scholarship_raw}', defaulting to 0.0")
+            
+            if not name:
+                error = "Name is required"
+                grades = conn.execute('''
+                    SELECT subjects.id AS subject_id, subjects.name, grades.grade
+                    FROM subjects
+                    LEFT JOIN grades ON grades.subject_id = subjects.id AND grades.student_id = ?
+                    WHERE subjects.program_id = (SELECT program_id FROM groups WHERE id = ?) AND subjects.semester <= (SELECT course_year FROM groups WHERE id = ?)
+                ''', (student_id, group_id, group_id)).fetchall()
+                program_id = conn.execute('SELECT program_id FROM groups WHERE id = ?', (group_id,)).fetchone()['program_id']
+                conn.close()
+                return render_template('edit_student.html', student=student, group_id=group_id, program_id=program_id, grades=grades, error=error)
+            if new_student_id and new_student_id != str(student_id) and conn.execute('SELECT 1 FROM students WHERE id = ?', (new_student_id,)).fetchone():
+                error = "This student ID is already in use"
+                grades = conn.execute('''
+                    SELECT subjects.id AS subject_id, subjects.name, grades.grade
+                    FROM subjects
+                    LEFT JOIN grades ON grades.subject_id = subjects.id AND grades.student_id = ?
+                    WHERE subjects.program_id = (SELECT program_id FROM groups WHERE id = ?) AND subjects.semester <= (SELECT course_year FROM groups WHERE id = ?)
+                ''', (student_id, group_id, group_id)).fetchall()
+                program_id = conn.execute('SELECT program_id FROM groups WHERE id = ?', (group_id,)).fetchone()['program_id']
+                conn.close()
+                return render_template('edit_student.html', student=student, group_id=group_id, program_id=program_id, grades=grades, error=error)
+            program_id = request.form.get('program_id')
+            if not program_id:
+                group = conn.execute('SELECT program_id FROM groups WHERE id = ?', (group_id,)).fetchone()
+                program_id = group['program_id'] if group else None
+            if not program_id:
+                conn.close()
+                return "Error: Program ID not found", 500
+            
+            # Обновление данных студента, включая id, если оно изменилось
+            if new_student_id and new_student_id != str(student_id):
+                conn.execute('UPDATE grades SET student_id = ? WHERE student_id = ?', (new_student_id, student_id))
+                conn.execute('UPDATE students SET id = ?, name = ?, scholarship = ? WHERE id = ?', (new_student_id, name, scholarship, student_id))
+            else:
+                conn.execute('UPDATE students SET name = ?, scholarship = ? WHERE id = ?', (name, scholarship, student_id))
+            
+            # Обновление оценок
+            for key, value in request.form.items():
+                if key.startswith('grade_') and value.strip():
+                    subject_id = int(key.replace('grade_', ''))
+                    try:
+                        grade = float(value) if value != '' else None
+                        conn.execute('''
+                            INSERT OR REPLACE INTO grades (student_id, subject_id, grade)
+                            VALUES (?, ?, ?)
+                        ''', (new_student_id if new_student_id else student_id, subject_id, grade))
+                    except ValueError:
+                        continue  # Пропускаем некорректные значения
+            
             conn.commit()
             conn.close()
-            return redirect(url_for('group', program_id=request.form['program_id'], group_id=group_id))
+            return redirect(url_for('group', program_id=program_id, group_id=group_id))
+        
+        # Для GET-запроса загружаем данные
+        group = conn.execute('SELECT program_id, course_year FROM groups WHERE id = ?', (group_id,)).fetchone()
+        program_id = group['program_id'] if group else None
+        current_semester = group['course_year'] if group else None
+        grades = []
+        if program_id and current_semester:
+            grades = conn.execute('''
+                SELECT subjects.id AS subject_id, subjects.name, grades.grade
+                FROM subjects
+                LEFT JOIN grades ON grades.subject_id = subjects.id AND grades.student_id = ?
+                WHERE subjects.program_id = ? AND subjects.semester <= ?
+            ''', (student_id, program_id, current_semester)).fetchall()
         conn.close()
-        return render_template('edit_student.html', student=student, group_id=group_id)
+        return render_template('edit_student.html', student=student, group_id=group_id, program_id=program_id, grades=grades or [])
+    except ValueError as e:
+        conn.close()
+        return f"Error: Invalid input - {str(e)}", 400
     except Exception as e:
         return f"Error: {str(e)}", 500
 
@@ -120,10 +270,19 @@ def edit_student(group_id, student_id):
 def delete_student(group_id, student_id):
     try:
         conn = get_db_connection()
+        student = conn.execute('SELECT * FROM students WHERE id = ?', (student_id,)).fetchone()
+        if not student or student['group_id'] != group_id:
+            conn.close()
+            return "Student not found or not in this group", 404
+        
+        program_id = request.form.get('program_id')
+        if not program_id:
+            group = conn.execute('SELECT program_id FROM groups WHERE id = ?', (group_id,)).fetchone()
+            program_id = group['program_id'] if group else None
         conn.execute('DELETE FROM students WHERE id = ?', (student_id,))
         conn.commit()
         conn.close()
-        return redirect(url_for('group', program_id=request.form['program_id'], group_id=group_id))
+        return redirect(url_for('group', program_id=program_id, group_id=group_id)) if program_id else ("Error: Program ID not found", 500)
     except Exception as e:
         return f"Error: {str(e)}", 500
 

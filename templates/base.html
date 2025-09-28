@@ -1,18 +1,19 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>University Database</title>
+    <title>База данных</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <script src="{{ url_for('static', filename='js/scripts.js') }}"></script>
     <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
 </head>
 <body>
     <header>
-        <h1>University Database</h1>
+        <h1>База данных</h1>
         {% if request.endpoint != 'index' %}
         <nav>
             <a href="{{ url_for('index') }}">Главная</a>
             <button onclick="goBack()">Назад</button>
+            <button onclick="goForward()">Вперёд</button>
         </nav>
         {% endif %}
     </header>
