@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Добавление студента в группу</h2>
+
+{% if error %}
+    <p style="color: red;">{{ error }}</p>
+{% endif %}
+
+<form action="{{ url_for('add_student', group_id=group_id) }}" method="POST">
+    <input type="hidden" name="program_id" value="{{ program_id if program_id else '' }}">
+    
+    <label>ID (номер зачетки): </label><input type="text" name="student_id" required><br><br>
+    
+    <label>Имя: </label><input type="text" name="name" required><br><br>
+    
+    <label>Стипендия: </label><input type="checkbox" name="scholarship"><br><br>
+    
+    <h3>Зачетная книжка (начальные оценки)</h3>
+    {% if subjects %}
+        <table border="1">
+            <tr>
+                <th>Предмет</th>
+                <th>Оценка (0-5)</th>
+            </tr>
+            {% for subject in subjects %}
+                <tr>
+                    <td>{{ subject.name }}</td>
+                    <td><input type="number" step="0.1" name="grade_{{ subject.subject_id }}" value="" min="0" max="5"></td>
+                </tr>
+            {% endfor %}
+        </table>
+    {% else %}
+        <p>Нет доступных предметов для отображения.</p>
+    {% endif %}
+    
+    <br><br>
+    <button type="submit">Добавить студента</button>
+</form>
+
+<a href="{{ url_for('group', program_id=program_id, group_id=group_id) }}">Назад к группе</a>
+{% endblock %}

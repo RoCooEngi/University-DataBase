@@ -1,0 +1,9 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Студент: {{ student.name }}</h2>
+<ul>
+    {% for schedule in schedules[student.id] %}
+        <li>{{ schedule.name }}: {{ schedule.grade }}</li>
+    {% endfor %}
+</ul>
+{% endfor %}
