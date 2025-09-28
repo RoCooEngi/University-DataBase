@@ -95,6 +95,14 @@ def add_student(group_id):
         if request.method == 'POST':
             name = request.form.get('name', '').strip()
             student_id = request.form.get('student_id', '').strip()  # Вводимый id как record_book_id
+            scholarship_raw = request.form.get('scholarship', '0.0').strip()  # Получаем строковое значение
+            try:
+                scholarship = float(scholarship_raw) if scholarship_raw else 0.0  # Преобразуем в float, по умолчанию 0.0
+                print(f"DEBUG: scholarship input = {scholarship_raw}, saved as = {scholarship}")  # Отладочный вывод
+            except ValueError:
+                scholarship = 0.0
+                print(f"DEBUG: Invalid scholarship input '{scholarship_raw}', defaulting to 0.0")
+            
             if not name:
                 error = "Name is required"
                 program_id = conn.execute('SELECT program_id FROM groups WHERE id = ?', (group_id,)).fetchone()['program_id']
@@ -117,7 +125,6 @@ def add_student(group_id):
                 ''', (program_id, current_semester)).fetchall()
                 conn.close()
                 return render_template('add_student.html', group_id=group_id, program_id=program_id, subjects=subjects, error=error)
-            scholarship = 1 if request.form.get('scholarship') else 0
             program_id = request.form.get('program_id')
             if not program_id:
                 program_id = conn.execute('SELECT program_id FROM groups WHERE id = ?', (group_id,)).fetchone()['program_id']
@@ -176,6 +183,14 @@ def edit_student(group_id, student_id):
         if request.method == 'POST':
             name = request.form.get('name', '').strip()
             new_student_id = request.form.get('student_id', '').strip()  # Новый id для редактирования
+            scholarship_raw = request.form.get('scholarship', '0.0').strip()  # Получаем строковое значение
+            try:
+                scholarship = float(scholarship_raw) if scholarship_raw else 0.0  # Преобразуем в float
+                print(f"DEBUG: scholarship input = {scholarship_raw}, saved as = {scholarship}")  # Отладочный вывод
+            except ValueError:
+                scholarship = 0.0
+                print(f"DEBUG: Invalid scholarship input '{scholarship_raw}', defaulting to 0.0")
+            
             if not name:
                 error = "Name is required"
                 grades = conn.execute('''
@@ -198,7 +213,6 @@ def edit_student(group_id, student_id):
                 program_id = conn.execute('SELECT program_id FROM groups WHERE id = ?', (group_id,)).fetchone()['program_id']
                 conn.close()
                 return render_template('edit_student.html', student=student, group_id=group_id, program_id=program_id, grades=grades, error=error)
-            scholarship = 1 if request.form.get('scholarship') else 0
             program_id = request.form.get('program_id')
             if not program_id:
                 group = conn.execute('SELECT program_id FROM groups WHERE id = ?', (group_id,)).fetchone()

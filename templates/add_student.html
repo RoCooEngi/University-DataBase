@@ -13,7 +13,7 @@
     
     <label>Имя: </label><input type="text" name="name" required><br><br>
     
-    <label>Стипендия: </label><input type="checkbox" name="scholarship"><br><br>
+    <label>Стипендия: </label><input type="number" step="0.01" name="scholarship" value="0.00" min="0" required><br><br>
     
     <h3>Зачетная книжка (начальные оценки)</h3>
     {% if subjects %}
